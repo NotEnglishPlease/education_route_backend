@@ -1,104 +1,67 @@
 package com
 
-import com.auth0.jwt.JWT
-import com.auth0.jwt.algorithms.Algorithm
-import io.ktor.http.*
-import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
-import io.ktor.server.auth.*
-import io.ktor.server.auth.jwt.*
-import io.ktor.server.plugins.callloging.*
-import io.ktor.server.plugins.contentnegotiation.*
-import io.ktor.server.request.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
 import java.sql.Connection
-import java.sql.DriverManager
 import org.jetbrains.exposed.sql.*
-import org.koin.dsl.module
-import org.koin.ktor.plugin.Koin
-import org.koin.logger.slf4jLogger
-import org.slf4j.event.*
+import org.jetbrains.exposed.sql.transactions.transaction
+
+object Client : Table("client") {
+    val id = integer("id").autoIncrement()
+    val email = varchar("email", 255).uniqueIndex()
+    val password = varchar("password", 255)
+    val parentName = varchar("parent_name", 255)
+    val phone = varchar("phone", 255)
+    val childName = varchar("child_name", 255)
+    val childBirthday = varchar("child_birthday", 255)
+    override val primaryKey = PrimaryKey(id)
+}
+
+object Group : Table("group") {
+    val id = integer("id").autoIncrement()
+    val number = integer("number")
+    val level = integer("level")
+    override val primaryKey = PrimaryKey(id)
+}
+
+object Employee : Table("employee") {
+    val id = integer("id").autoIncrement()
+    val name = varchar("name", 255)
+    val profile = varchar("profile", 255)
+    val photo = blob("photo").nullable()
+    val type = varchar("type", 50)
+    override val primaryKey = PrimaryKey(id)
+}
+
+object Lesson : Table("lesson") {
+    val id = integer("id").autoIncrement()
+    val employeeId = integer("id_employee").references(Employee.id)
+    val groupId = integer("id_group").references(Group.id)
+    val subject = varchar("subject", 255)
+    val topic = varchar("topic", 255).nullable()
+    val time = varchar("time", 255)
+    val date = varchar("date", 255)
+    override val primaryKey = PrimaryKey(id)
+}
+
+object LessonVisit : Table("lesson_visit") {
+    val id = integer("id").autoIncrement()
+    val studentId = integer("id_student").references(Client.id)
+    val lessonId = integer("id_lesson").references(Lesson.id)
+    val visit = bool("visit")
+    val grade = integer("grade")
+    val homework = varchar("homework", 255).nullable()
+    override val primaryKey = PrimaryKey(id)
+}
 
 fun Application.configureDatabases() {
-    val dbConnection: Connection = connectToPostgres(embedded = true)
-    val cityService = CityService(dbConnection)
-    
-    routing {
-    
-        // Create city
-        post("/cities") {
-            val city = call.receive<City>()
-            val id = cityService.create(city)
-            call.respond(HttpStatusCode.Created, id)
-        }
-    
-        // Read city
-        get("/cities/{id}") {
-            val id = call.parameters["id"]?.toInt() ?: throw IllegalArgumentException("Invalid ID")
-            try {
-                val city = cityService.read(id)
-                call.respond(HttpStatusCode.OK, city)
-            } catch (e: Exception) {
-                call.respond(HttpStatusCode.NotFound)
-            }
-        }
-    
-        // Update city
-        put("/cities/{id}") {
-            val id = call.parameters["id"]?.toInt() ?: throw IllegalArgumentException("Invalid ID")
-            val user = call.receive<City>()
-            cityService.update(id, user)
-            call.respond(HttpStatusCode.OK)
-        }
-    
-        // Delete city
-        delete("/cities/{id}") {
-            val id = call.parameters["id"]?.toInt() ?: throw IllegalArgumentException("Invalid ID")
-            cityService.delete(id)
-            call.respond(HttpStatusCode.OK)
-        }
-    }
-    val database = Database.connect(
-        url = "jdbc:h2:mem:test;DB_CLOSE_DELAY=-1",
-        user = "root",
-        driver = "org.h2.Driver",
-        password = "",
+    Database.connect(
+        url = "jdbc:postgresql://127.0.0.1:8181/mydatabase",
+        user = "postgres",
+        driver = "org.postgresql.Driver",
+        password = "postgres",
     )
-    val userService = UserService(database)
-    routing {
-        // Create user
-        post("/users") {
-            val user = call.receive<ExposedUser>()
-            val id = userService.create(user)
-            call.respond(HttpStatusCode.Created, id)
-        }
-        
-        // Read user
-        get("/users/{id}") {
-            val id = call.parameters["id"]?.toInt() ?: throw IllegalArgumentException("Invalid ID")
-            val user = userService.read(id)
-            if (user != null) {
-                call.respond(HttpStatusCode.OK, user)
-            } else {
-                call.respond(HttpStatusCode.NotFound)
-            }
-        }
-        
-        // Update user
-        put("/users/{id}") {
-            val id = call.parameters["id"]?.toInt() ?: throw IllegalArgumentException("Invalid ID")
-            val user = call.receive<ExposedUser>()
-            userService.update(id, user)
-            call.respond(HttpStatusCode.OK)
-        }
-        
-        // Delete user
-        delete("/users/{id}") {
-            val id = call.parameters["id"]?.toInt() ?: throw IllegalArgumentException("Invalid ID")
-            userService.delete(id)
-            call.respond(HttpStatusCode.OK)
-        }
+    transaction {
+        SchemaUtils.create(Client, Group, Employee, Lesson, LessonVisit)
     }
 }
 /**
@@ -122,17 +85,3 @@ fun Application.configureDatabases() {
  * @return [Connection] that represent connection to the database. Please, don't forget to close this connection when
  * your application shuts down by calling [Connection.close]
  * */
-fun Application.connectToPostgres(embedded: Boolean): Connection {
-    Class.forName("org.postgresql.Driver")
-    if (embedded) {
-        log.info("Using embedded H2 database for testing; replace this flag to use postgres")
-        return DriverManager.getConnection("jdbc:h2:mem:test;DB_CLOSE_DELAY=-1", "root", "")
-    } else {
-        val url = environment.config.property("postgres.url").getString()
-        log.info("Connecting to postgres database at $url")
-        val user = environment.config.property("postgres.user").getString()
-        val password = environment.config.property("postgres.password").getString()
-
-        return DriverManager.getConnection(url, user, password)
-    }
-}

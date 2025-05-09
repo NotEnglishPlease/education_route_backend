@@ -19,9 +19,132 @@ import org.koin.dsl.module
 import org.koin.ktor.plugin.Koin
 import org.koin.logger.slf4jLogger
 import org.slf4j.event.*
+import org.jetbrains.exposed.sql.transactions.transaction
+import org.mindrot.jbcrypt.BCrypt
+import com.Client
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.dao.id.IntIdTable
+import org.jetbrains.exposed.dao.id.EntityID
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class LoginResponse(
+    val success: Boolean,
+    val role: String? = null,
+    val message: String? = null,
+    val client: ClientData? = null
+)
+
+@Serializable
+data class ClientData(
+    val id: Int,
+    val email: String,
+    val parentName: String,
+    val phone: String,
+    val childName: String,
+    val childBirthday: String
+)
 
 fun Application.configureRouting() {
     routing {
+        get("/login") {
+            val params = call.request.queryParameters
+            val email = params["email"] ?: return@get call.respond(HttpStatusCode.BadRequest, "Email required")
+            val password = params["password"] ?: return@get call.respond(HttpStatusCode.BadRequest, "Password required")
+
+            // Проверка на роль администратора
+            if (email == "admin@gmail.com" && password == "12345678") {
+                call.respond(LoginResponse(
+                    success = true,
+                    role = "admin"
+                ))
+                return@get
+            }
+
+            // Проверка на роль преподавателя
+            if (email == "tutor@gmail.com" && password == "12345678") {
+                call.respond(LoginResponse(
+                    success = true,
+                    role = "tutor"
+                ))
+                return@get
+            }
+
+            // Проверка учетных данных клиента
+            val client = transaction {
+                Client.selectAll().where { Client.email eq email }.firstOrNull()
+            }
+
+            if (client == null) {
+                call.respond(LoginResponse(
+                    success = false,
+                    message = "Неверный email или пароль"
+                ))
+                return@get
+            }
+
+            val hashedPassword = client[Client.password]
+            if (!BCrypt.checkpw(password, hashedPassword)) {
+                call.respond(LoginResponse(
+                    success = false,
+                    message = "Неверный email или пароль"
+                ))
+                return@get
+            }
+
+            call.respond(HttpStatusCode.OK, LoginResponse(
+                success = true,
+                role = "client",
+                client = ClientData(
+                    id = client[Client.id],
+                    email = client[Client.email],
+                    parentName = client[Client.parentName],
+                    phone = client[Client.phone],
+                    childName = client[Client.childName],
+                    childBirthday = client[Client.childBirthday]
+                )
+            ))
+        }
+
+        post("/register") {
+            val params = call.receiveParameters()
+            val email = params["email"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Email required")
+            val password = params["password"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Password required")
+            val parentName = params["name"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Parent name required")
+            val phone = params["phone"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Phone required")
+            val childName = params["child_name"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Child name required")
+            val childBirthday = params["child_birthday"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Child birthday required")
+
+            println("got everything we wanted")
+            println("""
+            email: $email
+            password: $password
+            parentName: $parentName
+            phone: $phone
+            childName: $childName
+            childBirthday: $childBirthday
+            """)
+            val exists = transaction {
+                Client.selectAll().where{ Client.email eq email }.count() > 0
+            }
+            if (exists) {
+                call.respond(HttpStatusCode.Conflict, "Email already registered")
+                return@post
+            }
+
+            val hashedPassword = BCrypt.hashpw(password, BCrypt.gensalt())
+            transaction {
+                Client.insert {
+                    it[Client.email] = email
+                    it[Client.password] = hashedPassword
+                    it[Client.parentName] = parentName
+                    it[Client.phone] = phone
+                    it[Client.childName] = childName
+                    it[Client.childBirthday] = childBirthday
+                }
+            }
+            call.respond(HttpStatusCode.Created, "Registration successful")
+        }
         get("/") {
             call.respondText("Hello World!")
         }
