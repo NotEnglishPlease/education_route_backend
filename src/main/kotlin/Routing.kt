@@ -113,17 +113,7 @@ fun Application.configureRouting() {
             val parentName = params["name"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Parent name required")
             val phone = params["phone"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Phone required")
             val childName = params["child_name"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Child name required")
-            val childBirthday = params["child_birthday"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Child birthday required")
 
-            println("got everything we wanted")
-            println("""
-            email: $email
-            password: $password
-            parentName: $parentName
-            phone: $phone
-            childName: $childName
-            childBirthday: $childBirthday
-            """)
             val exists = transaction {
                 Client.selectAll().where{ Client.email eq email }.count() > 0
             }

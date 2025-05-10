@@ -7,50 +7,38 @@ import org.jetbrains.exposed.sql.transactions.transaction
 
 object Client : Table("client") {
     val id = integer("id").autoIncrement()
-    val email = varchar("email", 255).uniqueIndex()
+    val email = varchar("email", 50).uniqueIndex()
     val password = varchar("password", 255)
-    val parentName = varchar("parent_name", 255)
-    val phone = varchar("phone", 255)
-    val childName = varchar("child_name", 255)
-    val childBirthday = varchar("child_birthday", 255)
-    override val primaryKey = PrimaryKey(id)
-}
-
-object Group : Table("group") {
-    val id = integer("id").autoIncrement()
-    val number = integer("number")
-    val level = integer("level")
+    val parentName = varchar("parent_name", 50)
+    val phone = varchar("phone", 20)
+    val childName = varchar("child_name", 50)
+    val childBirthday = varchar("child_birthday", 50)
+    val paidLessons = integer("paid_lessons").nullable()
     override val primaryKey = PrimaryKey(id)
 }
 
 object Employee : Table("employee") {
     val id = integer("id").autoIncrement()
-    val name = varchar("name", 255)
-    val profile = varchar("profile", 255)
-    val photo = blob("photo").nullable()
-    val type = varchar("type", 50)
+    val name = varchar("name", 50)
+    val profile = varchar("profile", 50)
     override val primaryKey = PrimaryKey(id)
 }
 
 object Lesson : Table("lesson") {
     val id = integer("id").autoIncrement()
     val employeeId = integer("id_employee").references(Employee.id)
-    val groupId = integer("id_group").references(Group.id)
-    val subject = varchar("subject", 255)
-    val topic = varchar("topic", 255).nullable()
-    val time = varchar("time", 255)
-    val date = varchar("date", 255)
+    val subject = varchar("subject", 50)
+    val topic = varchar("topic", 100).nullable()
+    val time = varchar("time", 50)
+    val weekDay = varchar("week_day", 15)
+    val ageLevel = integer("age_level")
     override val primaryKey = PrimaryKey(id)
 }
 
 object LessonVisit : Table("lesson_visit") {
-    val id = integer("id").autoIncrement()
     val studentId = integer("id_student").references(Client.id)
     val lessonId = integer("id_lesson").references(Lesson.id)
     val visit = bool("visit")
-    val grade = integer("grade")
-    val homework = varchar("homework", 255).nullable()
-    override val primaryKey = PrimaryKey(id)
 }
 
 fun Application.configureDatabases() {
@@ -61,7 +49,7 @@ fun Application.configureDatabases() {
         password = "postgres",
     )
     transaction {
-        SchemaUtils.create(Client, Group, Employee, Lesson, LessonVisit)
+        SchemaUtils.create(Client, Employee, Lesson, LessonVisit)
     }
 }
 /**
