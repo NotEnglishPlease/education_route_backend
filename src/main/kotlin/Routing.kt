@@ -45,6 +45,25 @@ data class ClientData(
     val childBirthday: String
 )
 
+@Serializable
+data class LessonDTO(
+    val id: Int? = null,
+    val employeeId: Int,
+    val subject: String,
+    val topic: String? = null,
+    val time: String,
+    val weekDay: String,
+    val ageLevel: Int,
+    val homework: String? = null
+)
+
+@Serializable
+data class EmployeeDTO(
+    val id: Int,
+    val name: String,
+    val profile: String? = null
+)
+
 fun Application.configureRouting() {
     routing {
         get("/login") {
@@ -135,8 +154,148 @@ fun Application.configureRouting() {
             }
             call.respond(HttpStatusCode.Created, "Registration successful")
         }
+
         get("/") {
             call.respondText("Hello World!")
+        }
+
+        // Получить все занятия
+        get("/lessons") {
+            val lessons = transaction {
+                Lesson.selectAll().map {
+                    LessonDTO(
+                        id = it[Lesson.id],
+                        employeeId = it[Lesson.employeeId],
+                        subject = it[Lesson.subject],
+                        topic = it[Lesson.topic],
+                        time = it[Lesson.time],
+                        weekDay = it[Lesson.weekDay],
+                        ageLevel = it[Lesson.ageLevel],
+                        homework = it[Lesson.homework]
+                    )
+                }
+            }
+            call.respond(lessons)
+        }
+
+        // Получить одно занятие по id
+        get("/lessons/{id}") {
+            val id = call.parameters["id"]?.toIntOrNull()
+            if (id == null) {
+                call.respond(HttpStatusCode.BadRequest, "Invalid id")
+                return@get
+            }
+            val lesson = transaction {
+                Lesson.selectAll().where { Lesson.id eq id }.firstOrNull()?.let {
+                    LessonDTO(
+                        id = it[Lesson.id],
+                        employeeId = it[Lesson.employeeId],
+                        subject = it[Lesson.subject],
+                        topic = it[Lesson.topic],
+                        time = it[Lesson.time],
+                        weekDay = it[Lesson.weekDay],
+                        ageLevel = it[Lesson.ageLevel],
+                        homework = it[Lesson.homework]
+                    )
+                }
+            }
+            if (lesson == null) {
+                call.respond(HttpStatusCode.NotFound, "Lesson not found")
+            } else {
+                call.respond(lesson)
+            }
+        }
+
+        // Добавить новое занятие
+        post("/lessons") {
+            val dto = call.receive<LessonDTO>()
+            println("Received time: ${dto.time}")
+            val newId: Int = transaction {
+                Lesson.insert {
+                    it[Lesson.employeeId] = dto.employeeId
+                    it[Lesson.subject] = dto.subject
+                    it[Lesson.topic] = dto.topic
+                    it[Lesson.time] = dto.time
+                    it[Lesson.weekDay] = dto.weekDay
+                    it[Lesson.ageLevel] = dto.ageLevel
+                    it[Lesson.homework] = dto.homework
+                } get Lesson.id
+            }!!
+            call.respond(HttpStatusCode.Created, mapOf("id" to newId))
+        }
+
+        // Обновить существующее занятие
+        put("/lessons/{id}") {
+            val id = call.parameters["id"]?.toIntOrNull()
+            if (id == null) {
+                call.respond(HttpStatusCode.BadRequest, "Invalid id")
+                return@put
+            }
+            val dto = call.receive<LessonDTO>()
+            val updated = transaction {
+                Lesson.update({ Lesson.id eq id }) {
+                    it[Lesson.employeeId] = dto.employeeId
+                    it[Lesson.subject] = dto.subject
+                    it[Lesson.topic] = dto.topic
+                    it[Lesson.time] = dto.time
+                    it[Lesson.weekDay] = dto.weekDay
+                    it[Lesson.ageLevel] = dto.ageLevel
+                    it[Lesson.homework] = dto.homework
+                }
+            }
+            if (updated > 0) {
+                call.respond(HttpStatusCode.OK)
+            } else {
+                call.respond(HttpStatusCode.NotFound, "Lesson not found")
+            }
+        }
+
+        // Удалить занятие
+        delete("/lessons/{id}") {
+            val id = call.parameters["id"]?.toIntOrNull()
+            if (id == null) {
+                call.respond(HttpStatusCode.BadRequest, "Invalid id")
+                return@delete
+            }
+            val deleted = transaction {
+                Lesson.deleteWhere { Lesson.id eq id }
+            }
+            if (deleted > 0) {
+                call.respond(HttpStatusCode.OK)
+            } else {
+                call.respond(HttpStatusCode.NotFound, "Lesson not found")
+            }
+        }
+
+        // Получить id преподавателя по ФИО
+        get("/employee/by_name") {
+            val name = call.request.queryParameters["name"]
+            if (name.isNullOrBlank()) {
+                call.respond(HttpStatusCode.BadRequest, "Name required")
+                return@get
+            }
+            val id = transaction {
+                Employee.selectAll().where { Employee.name eq name }.firstOrNull()?.get(Employee.id)
+            }
+            if (id != null) {
+                call.respond(mapOf("id" to id))
+            } else {
+                call.respond(HttpStatusCode.NotFound, "Employee not found")
+            }
+        }
+
+        // Получить список всех преподавателей
+        get("/employees") {
+            val employees = transaction {
+                Employee.selectAll().map {
+                    EmployeeDTO(
+                        id = it[Employee.id],
+                        name = it[Employee.name],
+                        profile = it[Employee.profile]
+                    )
+                }
+            }
+            call.respond(employees)
         }
     }
 }

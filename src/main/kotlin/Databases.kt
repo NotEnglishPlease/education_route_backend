@@ -32,6 +32,7 @@ object Lesson : Table("lesson") {
     val time = varchar("time", 50)
     val weekDay = varchar("week_day", 15)
     val ageLevel = integer("age_level")
+    val homework = varchar("homework", 255).nullable()
     override val primaryKey = PrimaryKey(id)
 }
 
