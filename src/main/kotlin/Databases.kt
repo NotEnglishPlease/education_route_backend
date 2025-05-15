@@ -40,6 +40,8 @@ object LessonVisit : Table("lesson_visit") {
     val studentId = integer("id_student").references(Client.id)
     val lessonId = integer("id_lesson").references(Lesson.id)
     val visit = bool("visit")
+    val garde = integer("garde").nullable()
+    val date = varchar("date", 50)
 }
 
 fun Application.configureDatabases() {

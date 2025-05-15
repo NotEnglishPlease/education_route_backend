@@ -64,6 +64,16 @@ data class EmployeeDTO(
     val profile: String? = null
 )
 
+@Serializable
+data class ClientDTO(
+    val id: Int,
+    val childName: String,
+    val parentName: String,
+    val age: Int,
+    val phone: String,
+    val paidLessons: Int?
+)
+
 fun Application.configureRouting() {
     routing {
         get("/login") {
@@ -132,6 +142,7 @@ fun Application.configureRouting() {
             val parentName = params["name"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Parent name required")
             val phone = params["phone"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Phone required")
             val childName = params["child_name"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Child name required")
+            val childBirthday = params["child_birthday"] ?: return@post call.respond(HttpStatusCode.BadRequest, "Child birthday required")
 
             val exists = transaction {
                 Client.selectAll().where{ Client.email eq email }.count() > 0
@@ -297,5 +308,67 @@ fun Application.configureRouting() {
             }
             call.respond(employees)
         }
+
+        // Получить список всех клиентов
+        get("/clients") {
+            val clients = transaction {
+                Client.selectAll().map {
+                    val birthday = it[Client.childBirthday]
+                    val age = calculateAge(birthday)
+                    
+                    ClientDTO(
+                        id = it[Client.id],
+                        childName = it[Client.childName],
+                        parentName = it[Client.parentName],
+                        age = age,
+                        phone = it[Client.phone],
+                        paidLessons = it[Client.paidLessons]
+                    )
+                }
+            }
+            call.respond(clients)
+        }
+
+        // Обновить количество оплаченных занятий
+        put("/clients/{id}/paid_lessons") {
+            val id = call.parameters["id"]?.toIntOrNull()
+            if (id == null) {
+                call.respond(HttpStatusCode.BadRequest, "Invalid id")
+                return@put
+            }
+            
+            val params = call.receiveParameters()
+            val paidLessons = params["paid_lessons"]?.toIntOrNull()
+            if (paidLessons == null) {
+                call.respond(HttpStatusCode.BadRequest, "Invalid paid_lessons value")
+                return@put
+            }
+            
+            val updated = transaction {
+                Client.update({ Client.id eq id }) {
+                    it[Client.paidLessons] = paidLessons
+                }
+            }
+            
+            if (updated > 0) {
+                call.respond(HttpStatusCode.OK)
+            } else {
+                call.respond(HttpStatusCode.NotFound, "Client not found")
+            }
+        }
     }
+}
+
+private fun calculateAge(birthday: String): Int {
+    val parts = birthday.split(".")
+    if (parts.size != 3) return 0
+    
+    val day = parts[0].toIntOrNull() ?: return 0
+    val month = parts[1].toIntOrNull() ?: return 0
+    val year = parts[2].toIntOrNull() ?: return 0
+    
+    val today = java.time.LocalDate.now()
+    val birthDate = java.time.LocalDate.of(year, month, day)
+    
+    return java.time.Period.between(birthDate, today).years
 }
