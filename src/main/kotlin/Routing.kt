@@ -356,6 +356,43 @@ fun Application.configureRouting() {
                 call.respond(HttpStatusCode.NotFound, "Client not found")
             }
         }
+
+        // Получить доступные уроки по возрасту клиента
+        get("/lessons/available/{clientId}") {
+            val clientId = call.parameters["clientId"]?.toIntOrNull()
+            if (clientId == null) {
+                call.respond(HttpStatusCode.BadRequest, "Invalid client id")
+                return@get
+            }
+
+            val client = transaction {
+                Client.selectAll().where { Client.id eq clientId }.firstOrNull()
+            }
+
+            if (client == null) {
+                call.respond(HttpStatusCode.NotFound, "Client not found")
+                return@get
+            }
+
+            val clientAge = calculateAge(client[Client.childBirthday])
+            val lessons = transaction {
+                Lesson.selectAll()
+                    .where { Lesson.ageLevel eq clientAge }
+                    .map {
+                        LessonDTO(
+                            id = it[Lesson.id],
+                            employeeId = it[Lesson.employeeId],
+                            subject = it[Lesson.subject],
+                            topic = it[Lesson.topic],
+                            time = it[Lesson.time],
+                            weekDay = it[Lesson.weekDay],
+                            ageLevel = it[Lesson.ageLevel],
+                            homework = it[Lesson.homework]
+                        )
+                    }
+            }
+            call.respond(lessons)
+        }
     }
 }
 
