@@ -74,6 +74,20 @@ data class ClientDTO(
     val paidLessons: Int?
 )
 
+@Serializable
+data class MyCourseResponse(
+    val lessonVisit: LessonVisitData,
+    val lesson: LessonDTO
+)
+
+@Serializable
+data class LessonVisitData(
+    val visit: Boolean,
+    val garde: Int?,
+    val date: String,
+    val lessonId: Int
+)
+
 fun Application.configureRouting() {
     routing {
         get("/login") {
@@ -375,9 +389,20 @@ fun Application.configureRouting() {
             }
 
             val clientAge = calculateAge(client[Client.childBirthday])
+            
+            // Получаем ID уроков, на которые уже записан пользователь
+            val enrolledLessonIds = transaction {
+                LessonVisit.select(LessonVisit.lessonId)
+                    .where { LessonVisit.studentId eq clientId }
+                    .map { it[LessonVisit.lessonId] }
+            }
+
             val lessons = transaction {
                 Lesson.selectAll()
-                    .where { Lesson.ageLevel eq clientAge }
+                    .where { 
+                        (Lesson.ageLevel eq clientAge) and 
+                        (Lesson.id notInList enrolledLessonIds)
+                    }
                     .map {
                         LessonDTO(
                             id = it[Lesson.id],
@@ -392,6 +417,113 @@ fun Application.configureRouting() {
                     }
             }
             call.respond(lessons)
+        }
+
+        // --- Новый эндпоинт: запись на занятие ---
+        post("/enroll") {
+            val params = call.receiveParameters()
+            val clientId = params["clientId"]?.toIntOrNull()
+            val lessonId = params["lessonId"]?.toIntOrNull()
+            if (clientId == null || lessonId == null) {
+                call.respond(HttpStatusCode.BadRequest, "Invalid clientId or lessonId")
+                return@post
+            }
+
+            val exists = transaction {
+                LessonVisit.selectAll()
+                    .where { (LessonVisit.studentId eq clientId) and (LessonVisit.lessonId eq lessonId) }
+                    .count() > 0
+            }
+            if (exists) {
+                call.respond(HttpStatusCode.Conflict, "Already enrolled")
+                return@post
+            }
+
+            val lesson = transaction {
+                Lesson.selectAll().where { Lesson.id eq lessonId }.firstOrNull()
+            }
+            if (lesson == null) {
+                call.respond(HttpStatusCode.NotFound, "Lesson not found")
+                return@post
+            }
+            val weekDay = lesson[Lesson.weekDay]
+
+            // Определяем ближайшую дату нужного дня недели
+            val today = java.time.LocalDate.now()
+            val targetDay = try { java.time.DayOfWeek.valueOf(weekDay.uppercase()) } catch (e: Exception) { null }
+            var nextDate = today
+            if (targetDay != null) {
+                while (nextDate.dayOfWeek != targetDay) {
+                    nextDate = nextDate.plusDays(1)
+                }
+            }
+
+            transaction {
+                LessonVisit.insert {
+                    it[LessonVisit.studentId] = clientId
+                    it[LessonVisit.lessonId] = lessonId
+                    it[LessonVisit.visit] = false
+                    it[LessonVisit.garde] = null
+                    it[LessonVisit.date] = nextDate.toString()
+                }
+            }
+            call.respond(HttpStatusCode.Created, "Enrolled")
+        }
+
+        // --- Новый эндпоинт: мои курсы ---
+        get("/my_courses/{clientId}") {
+            val clientId = call.parameters["clientId"]?.toIntOrNull()
+            if (clientId == null) {
+                call.respond(HttpStatusCode.BadRequest, "Invalid clientId")
+                return@get
+            }
+            val courses = transaction {
+                (LessonVisit innerJoin Lesson).selectAll().where { LessonVisit.studentId eq clientId }
+                    .map {
+                        MyCourseResponse(
+                            lessonVisit = LessonVisitData(
+                                visit = it[LessonVisit.visit],
+                                garde = it[LessonVisit.garde],
+                                date = it[LessonVisit.date],
+                                lessonId = it[LessonVisit.lessonId]
+                            ),
+                            lesson = LessonDTO(
+                                id = it[Lesson.id],
+                                employeeId = it[Lesson.employeeId],
+                                subject = it[Lesson.subject],
+                                topic = it[Lesson.topic],
+                                time = it[Lesson.time],
+                                weekDay = it[Lesson.weekDay],
+                                ageLevel = it[Lesson.ageLevel],
+                                homework = it[Lesson.homework]
+                            )
+                        )
+                    }
+            }
+            call.respond(courses)
+        }
+
+        // --- Новый эндпоинт: отписка от занятия ---
+        delete("/unenroll/{clientId}/{lessonId}") {
+            val clientId = call.parameters["clientId"]?.toIntOrNull()
+            val lessonId = call.parameters["lessonId"]?.toIntOrNull()
+            if (clientId == null || lessonId == null) {
+                call.respond(HttpStatusCode.BadRequest, "Invalid clientId or lessonId")
+                return@delete
+            }
+
+            val deleted = transaction {
+                LessonVisit.deleteWhere { 
+                    (LessonVisit.studentId eq clientId) and 
+                    (LessonVisit.lessonId eq lessonId) 
+                }
+            }
+
+            if (deleted > 0) {
+                call.respond(HttpStatusCode.OK, "Unenrolled successfully")
+            } else {
+                call.respond(HttpStatusCode.NotFound, "Enrollment not found")
+            }
         }
     }
 }
